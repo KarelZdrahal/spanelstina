@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'cz.zdrahal.espanol'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'cz.zdrahal.espanol'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        // Pevný klíč v repozitáři: každá nová verze se nainstaluje přes starou a postup zůstane zachován.
+        fixed {
+            storeFile file('espanol.keystore')
+            storePassword 'espanol123'
+            keyAlias 'espanol'
+            keyPassword 'espanol123'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.fixed
+        }
+        debug {
+            signingConfig signingConfigs.fixed
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
