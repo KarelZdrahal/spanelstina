@@ -1,7 +1,8 @@
 # Español – španělština od nuly (Android)
 
 Mobilní aplikace pro úplné začátečníky: 15 lekcí, 250 slovíček, 90 vět, gramatika s výkladem v češtině,
-poslech (španělský hlas telefonu), diktáty, skládání vět, čtení s porozuměním a chytré opakování
+poslech (španělský hlas telefonu), 15 krátkých poslechových nahrávek s otázkami, 6 souvislých textů
+se slovníčkem a otázkami, diktáty, skládání vět, čtení s porozuměním a chytré opakování
 (rozložené opakování podle toho, co ti jde a co ne).
 
 ## Jak získat APK
@@ -11,7 +12,7 @@ poslech (španělský hlas telefonu), diktáty, skládání vět, čtení s poro
    (Android se zeptá na povolení instalace z prohlížeče, to je potřeba jednou povolit).
 
 ## Úpravy obsahu
-- Lekce: `web/src/lessons.js`, logika: `web/src/app.js`, vzhled: `web/src/style.css`.
+- Lekce: `web/src/lessons.js`, poslechy a souvislé texty: `web/src/texts.js`, logika: `web/src/app.js`, vzhled: `web/src/style.css`.
 - Po úpravě stačí změny poslat na GitHub. Workflow spustí `web/build.py` a sestaví novou verzi.
 - Aplikace je podepsaná pevným klíčem `app/espanol.keystore`, takže se nová verze nainstaluje přes starou a postup zůstane.
 

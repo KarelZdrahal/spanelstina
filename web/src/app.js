@@ -3,7 +3,7 @@
 const KEY = 'espanol_v1';
 const DAY = 864e5;
 const IV = [0, 1, 2, 4, 8, 16, 35, 70, 150]; // intervaly opakování ve dnech podle „krabičky“
-function blank() { return { v: 1, items: {}, prog: {}, days: {}, rate: 1, unlockAll: false }; }
+function blank() { return { v: 1, items: {}, prog: {}, days: {}, tx: {}, au: {}, rate: 1, unlockAll: false }; }
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v) return Object.assign(blank(), s); } catch (e) {} return blank(); }
 let S = load();
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -30,6 +30,8 @@ function learnedIds(kind) { return Object.keys(S.items).filter(id => item(id) &&
 function prog(l) { return S.prog[l] || 0; }
 function unlocked(l) { return S.unlockAll || l === 0 || prog(l - 1) >= 3; }
 function nextPart() { for (let l = 0; l < LESSONS.length; l++) { if (prog(l) < 3) return unlocked(l) ? { l, p: prog(l) } : null; } return null; }
+function textOpen(i) { return S.unlockAll || prog(TEXTS[i].after) >= 3; }
+function audOpen(l) { return S.unlockAll || prog(l) >= 2 || (S.au || {})[l] !== undefined; }
 function streak() { let n = 0; const d = new Date(); if (!S.days[dayKey(d)]) d.setDate(d.getDate() - 1); while (S.days[dayKey(d)]) { n++; d.setDate(d.getDate() - 1); } return n; }
 
 /* ====== Pomocné ====== */
@@ -49,7 +51,7 @@ let esVoice = null;
 function pickVoice() { try { const vs = speechSynthesis.getVoices(); esVoice = vs.find(v => /^es[-_]ES/i.test(v.lang)) || vs.find(v => /^es/i.test(v.lang)) || null; } catch (e) {} }
 if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 function speak(t, slow) {
-  t = t.replace(/[—–]/g, ' ').replace(/\s*\/\s*/g, ', ');
+  t = t.replace(/[—–]/g, ' ').replace(/\n+/g, ' ').replace(/\s*\/\s*/g, ', ');
   const r = (slow ? 0.6 : 0.95) * (S.rate || 1);
   if (window.AndroidTTS) { try { AndroidTTS.speak(t, r); return; } catch (e) {} }
   if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'es-ES'; if (esVoice) u.voice = esVoice; u.rate = r; speechSynthesis.speak(u); } catch (e) {} }
@@ -89,8 +91,8 @@ function home() {
   <div class="grid">
    <button onclick="lessonsList()"><i>📚</i>Lekce<small>${doneL}/${LESSONS.length} hotovo</small></button>
    <button onclick="review()"><i>🔁</i>Opakování<small>${due ? due + ' čeká' : 'vše zopakováno'}</small></button>
-   <button onclick="listening()"><i>🎧</i>Poslech<small>trénink ucha</small></button>
-   <button onclick="readings()"><i>📖</i>Čtení<small>texty s otázkami</small></button>
+   <button onclick="listening()"><i>🎧</i>Poslech<small>nahrávky a trénink</small></button>
+   <button onclick="readings()"><i>📖</i>Čtení<small>souvislé texty</small></button>
    <button onclick="dict()"><i>🗂️</i>Slovníček<small>${words} slov</small></button>
    <button onclick="settings()"><i>⚙️</i>Nastavení<small>hlas, záloha</small></button>
   </div>
@@ -101,6 +103,7 @@ function home() {
 
 function smart() {
   if (dueIds().length) return review();
+  const tx = TEXTS.find((x, i) => textOpen(i) && !(S.tx || {})[x.id]); if (tx) return readText(TEXTS.indexOf(tx));
   const np = nextPart(); if (np) return startPart(np.l, np.p);
   free();
 }
@@ -119,6 +122,7 @@ function lessonMenu(l) {
   const words = L.w.map(w => { const [es, cs] = w.split('|'); return `<div class="wrow" data-say="${esc(es)}"><b>${esc(es)}</b><span>${esc(cs)}</span></div>`; }).join('');
   shell(`${L.ic} ${esc(L.t)}`, `<div class="parts">${btns}</div>
   <button class="sec" onclick="practiceLesson(${l})">🎯 Procvičit tuto lekci</button>
+  ${audOpen(l) ? `<button class="sec" onclick="listenOne(${l})">🎧 Poslechové cvičení lekce</button>` : ''}
   <details class="card"><summary>📘 Výklad gramatiky</summary><div class="gram">${grammarHtml(L.g)}</div></details>
   <details class="card"><summary>🗂️ Slovíčka lekce (${L.w.length})</summary><div class="words">${words}</div></details>`);
 }
@@ -134,7 +138,7 @@ function startPart(l, p) {
   if (p === 1) { const ids = wIds(l, half, L.w.length); learnWords(ids); shuffle(wIds(l, 0, half)).slice(0, 3).forEach(id => q.push({ t: 'listen', id }));
     q.push({ t: 'info', l, short: true }); shuffle(L.q.map((_, i) => `g:${l}:${i}`)).forEach(id => q.push({ t: 'gram', id })); shuffle(ids).slice(0, 3).forEach(id => q.push({ t: 'type', id })); }
   if (p === 2) { const ids = L.s.map((_, i) => `s:${l}:${i}`); ids.forEach(id => q.push({ t: 'introS', id })); shuffle(ids).forEach(id => q.push({ t: 'order', id }));
-    shuffle(ids).slice(0, 3).forEach(id => q.push({ t: 'dict', id })); q.push({ t: 'read', l }); L.r.q.forEach((_, i) => q.push({ t: 'readq', l, i }));
+    shuffle(ids).slice(0, 3).forEach(id => q.push({ t: 'dict', id })); audTasks(l).forEach(x => q.push(x)); q.push({ t: 'read', l }); L.r.q.forEach((_, i) => q.push({ t: 'readq', l, i }));
     shuffle(wIds(l, 0, L.w.length)).slice(0, 3).forEach(id => q.push({ t: 'type', id })); }
   run(q, { title: `Lekce ${l + 1} · část ${p + 1}/3`, done: () => { if (prog(l) <= p) { S.prog[l] = p + 1; save(); } }, lesson: l, part: p });
 }
@@ -159,18 +163,34 @@ function practiceLesson(l) {
   const pool = ids.length ? ids : wIds(l, 0, 6);
   run(shuffle(weighted(pool, 12)).map(id => S.items[id] ? taskFor(id) : { t: 'intro', id }), { title: `Procvičení lekce ${l + 1}` });
 }
+function audTasks(l) { const q = [{ t: 'aud', l }]; LISTEN[l].q.forEach((_, i) => q.push({ t: 'audq', l, i })); q.push({ t: 'audshow', l }); return q; }
+function listenOne(l) { run(audTasks(l), { title: `Poslech k lekci ${l + 1}`, done: () => { S.au = S.au || {}; S.au[l] = 1; save(); } }); }
 function listening() {
+  screen = 'lis';
+  const rows = LISTEN.map((P, l) => { const o = audOpen(l), L = LESSONS[l];
+    return `<button class="lrow ${o ? '' : 'locked'}" ${o ? `onclick="listenOne(${l})"` : ''}><span class="lic">🎧</span><span class="lt"><b>${l + 1}. ${esc(L.t)}</b><small>${P.t.split('\n').length} vět · ${P.q.length} otázky${(S.au || {})[l] ? ' · ✅ poslechnuto' : ''}</small></span><span class="ls">${o ? '›' : '🔒'}</span></button>`; }).join('');
+  shell('Poslech', `<button class="go" onclick="listenDrill()"><span class="big">🎯 Trénink ucha</span><span class="sm">slovíčka a diktát z toho, co už umíš</span></button>
+   <h3 class="lh">Krátké nahrávky (text uvidíš až po odpovědích)</h3><div class="list">${rows}</div>
+   <p class="foot-note">Nahrávka k lekci se odemkne ve 3. části lekce. Pusť si ji klidně víckrát, i pomalu.</p>`);
+}
+function listenDrill() {
   const ws = learnedIds('w'), ss = learnedIds('s');
   if (!ws.length) return emptyMsg('Poslech', 'Nejdřív projdi alespoň první část první lekce.');
   const q = shuffle(weighted(ws, 8)).map(id => ({ t: 'listen', id })).concat(shuffle(ss).slice(0, 4).map(id => ({ t: 'dict', id })));
   run(shuffle(q), { title: 'Poslech' });
 }
+function readText(i) {
+  const T = TEXTS[i], q = [{ t: 'read', x: i }]; T.q.forEach((_, k) => q.push({ t: 'readq', x: i, i: k }));
+  run(q, { title: T.ic + ' ' + T.title, textId: T.id });
+}
 function readings() {
   screen = 'read';
+  const trow = TEXTS.map((T, i) => { const o = textOpen(i), sc = (S.tx || {})[T.id];
+    return `<button class="lrow ${o ? '' : 'locked'}" ${o ? `onclick="readText(${i})"` : ''}><span class="lic">${T.ic}</span><span class="lt"><b>${esc(T.title)}</b><small>${o ? (sc ? '✅ ' + sc + ' %' : T.t.split('\n').length + ' vět · ' + T.q.length + ' otázek') : 'odemkne se po lekci ' + (T.after + 1)}</small></span><span class="ls">${o ? '›' : '🔒'}</span></button>`; }).join('');
   const av = LESSONS.map((L, l) => ({ L, l })).filter(x => prog(x.l) >= 2 || (S.unlockAll));
   const rows = av.length ? av.map(({ L, l }) => `<button class="lrow" onclick="readOne(${l})"><span class="lic">${L.ic}</span><span class="lt"><b>${esc(L.r.t.split('\n')[0])}</b><small>Lekce ${l + 1}</small></span><span class="ls">›</span></button>`).join('')
     : '<p class="foot-note">Texty se zpřístupní po dokončení 2. části každé lekce.</p>';
-  shell('Čtení a porozumění', `<div class="list">${rows}</div>`);
+  shell('Čtení a porozumění', `<h3 class="lh">📚 Souvislé texty</h3><div class="list">${trow}</div><h3 class="lh">📄 Krátké texty z lekcí</h3><div class="list">${rows}</div>`);
 }
 function readOne(l) { const q = [{ t: 'read', l }]; LESSONS[l].r.q.forEach((_, i) => q.push({ t: 'readq', l, i })); run(q, { title: 'Čtení' }); }
 function emptyMsg(t, m) { shell(t, `<div class="card"><p>${m}</p><button class="btn" onclick="smart()">Začít</button></div>`); }
@@ -198,6 +218,7 @@ function answered(t, ok, rightHtml, extra) {
 function finish() {
   const o = SES.opts, ok = SES.ok, bad = SES.bad, min = Math.max(1, Math.round((Date.now() - SES.t0) / 60e3));
   if (o.done) o.done();
+  if (o.textId) { S.tx = S.tx || {}; const pc = ok + bad ? Math.round(ok / (ok + bad) * 100) : 100; S.tx[o.textId] = Math.max(S.tx[o.textId] || 0, pc); save(); }
   SES = null; screen = 'fin';
   const due = dueIds().length, np = nextPart();
   const nextLabel = due ? `🔁 Zopakovat (${due})` : np ? `▶ Dál: Lekce ${np.l + 1}, část ${np.p + 1}` : '🎯 Procvičovat dál';
@@ -291,21 +312,41 @@ const R = {
   order(t) { tiles(t, false); },
   dict(t) { tiles(t, true); },
   read(t) {
-    const r = LESSONS[t.l].r, lines = r.t.split('\n'), tr = r.tr.split('\n');
+    const r = srcOf(t), lines = r.t.split('\n'), tr = r.tr.split('\n');
     $('#body').innerHTML = `<div class="tag">📖 Čtení s porozuměním</div><p class="hint">Přečti si text, poslechni si ho a zkus mu porozumět. Ťuknutím na řádek ho přehraješ.</p>
      <div class="say center"><button class="pill" data-say="${esc(r.t)}">🔊 Celý text</button><button class="pill" data-say="${esc(r.t)}" data-slow="1">🐢 Pomalu</button></div>
      <div class="text">${lines.map((x, i) => `<p data-say="${esc(x)}">${esc(x)}<small class="trl">${esc(tr[i] || '')}</small></p>`).join('')}</div>
+     ${r.gl ? `<details class="card mini"><summary>🗂️ Nová slova v textu (${r.gl.length})</summary><div class="words">${r.gl.map(w => { const [es, cs] = w.split('|'); return `<div class="wrow" data-say="${esc(es)}"><b>${esc(es)}</b><span>${esc(cs)}</span></div>`; }).join('')}</div></details>` : ''}
      <button class="pill" id="trb">👁 Zobrazit překlad</button>`;
     $('#trb').onclick = () => { document.querySelector('.text').classList.toggle('show'); };
     contBtn('Na otázky');
   },
   readq(t) {
-    const r = LESSONS[t.l].r, [qq, o, a] = r.q[t.i], correct = o[a], opts = shuffle(o);
+    const r = srcOf(t), [qq, o, a] = r.q[t.i], correct = o[a], opts = shuffle(o);
     $('#body').innerHTML = `<div class="tag">📖 Otázka k textu</div><details class="card mini"><summary>Zobrazit text</summary><div class="text">${r.t.split('\n').map(x => `<p data-say="${esc(x)}">${esc(x)}</p>`).join('')}</div></details>
      <div class="prompt"><div class="cs-big g">${esc(qq)}</div></div><div class="opts">${options(opts)}</div>`;
     bindOptions(opts, correct, ok => answered(t, ok, esc(correct)));
+  },
+  aud(t) {
+    const P = LISTEN[t.l], n = P.t.split('\n').length;
+    $('#body').innerHTML = `<div class="tag">🎧 Poslechové cvičení</div><p class="hint">Uslyšíš ${n > 1 && /—/.test(P.t) ? 'krátký rozhovor' : 'krátké vyprávění'}. Text zatím neuvidíš, zkus porozumět jen uchem. Pusť si ho, kolikrát chceš, i pomalu. Pak odpovíš na ${P.q.length} otázky.</p>
+     <div class="prompt"><button class="play" data-say="${esc(P.t)}">🔊</button><button class="play sm" data-say="${esc(P.t)}" data-slow="1">🐢</button></div>`;
+    setTimeout(() => speak(P.t), 300); contBtn('Na otázky');
+  },
+  audq(t) {
+    const P = LISTEN[t.l], [qq, o, a] = P.q[t.i], correct = o[a], opts = shuffle(o);
+    $('#body').innerHTML = `<div class="tag">🎧 Otázka k nahrávce</div><div class="say center"><button class="pill" data-say="${esc(P.t)}">🔊 Pustit znovu</button><button class="pill" data-say="${esc(P.t)}" data-slow="1">🐢 Pomalu</button></div>
+     <div class="prompt"><div class="cs-big g">${esc(qq)}</div></div><div class="opts">${options(opts)}</div>`;
+    bindOptions(opts, correct, ok => answered(t, ok, esc(correct)));
+  },
+  audshow(t) {
+    const P = LISTEN[t.l], lines = P.t.split('\n'), tr = P.tr.split('\n');
+    $('#body').innerHTML = `<div class="tag">🎧 Co v nahrávce zaznělo</div><p class="hint">Ťukni na řádek a poslechni si ho znovu. Nahlas ho po nahrávce zopakuj.</p>
+     <div class="text show">${lines.map((x, i) => `<p data-say="${esc(x)}">${esc(x)}<small class="trl">${esc(tr[i] || '')}</small></p>`).join('')}</div>`;
+    contBtn('Pokračovat');
   }
 };
+function srcOf(t) { return t.x !== undefined ? TEXTS[t.x] : LESSONS[t.l].r; }
 function tiles(t, isDict) {
   const it = item(t.id), words = it.es.split(' ');
   const own = new Set(words.map(w => strip(norm(w))));
@@ -360,7 +401,7 @@ function settings() {
    <button class="sec" id="cp">📋 Zkopírovat zálohu</button>
    <textarea id="bk" class="inp ta" placeholder="sem vlož kód zálohy"></textarea><button class="sec" id="rs">⬆ Obnovit ze zálohy</button><p class="small" id="msg"></p></div>
   <div class="card"><h3>🗑️ Začít znovu</h3><button class="sec danger" id="rst">Smazat celý postup</button></div>
-  <p class="foot-note">Español v1.0 · ${LESSONS.length} lekcí · ${LESSONS.reduce((a, L) => a + L.w.length, 0)} slovíček · ${LESSONS.reduce((a, L) => a + L.s.length, 0)} vět</p>`);
+  <p class="foot-note">Español v1.1 · ${LESSONS.length} lekcí · ${LESSONS.reduce((a, L) => a + L.w.length, 0)} slovíček · ${LESSONS.reduce((a, L) => a + L.s.length, 0)} vět</p>`);
   $('#rate').oninput = e => { S.rate = +e.target.value; $('#rv').textContent = Math.round(S.rate * 100) + ' %'; save(); };
   $('#ua').onchange = e => { S.unlockAll = e.target.checked; save(); };
   $('#cp').onclick = async () => { const code = btoa(unescape(encodeURIComponent(JSON.stringify(S)))); $('#bk').value = code;
